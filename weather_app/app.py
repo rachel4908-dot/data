@@ -65,6 +65,12 @@ def main():
     # WeatherAPI 인스턴스 생성 (실제 API 사용)
     weather_api = WeatherAPI(test_mode=False)
     
+    # API 상태 표시
+    if weather_api.test_mode:
+        st.warning("⚠️ 현재 데모 모드로 실행 중입니다. 실제 날씨 데이터가 아닌 샘플 데이터를 표시합니다.")
+    else:
+        st.success("✅ 실시간 날씨 데이터를 제공하고 있습니다.")
+    
     # 사이드바
     with st.sidebar:
         st.header("🔍 도시 검색")

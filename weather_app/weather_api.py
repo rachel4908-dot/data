@@ -8,14 +8,40 @@ load_dotenv()
 
 class WeatherAPI:
     def __init__(self, test_mode=False):
-        # Streamlit Cloud 환경에서는 st.secrets 사용, 로컬에서는 .env 파일 사용
+        # API 키 우선순위: st.secrets > 환경변수 > 하드코딩된 키
+        self.api_key = None
+        
+        # 1. Streamlit secrets 시도
         try:
-            self.api_key = st.secrets["OPENWEATHER_API_KEY"]
-        except:
+            if hasattr(st, 'secrets') and 'OPENWEATHER_API_KEY' in st.secrets:
+                self.api_key = st.secrets["OPENWEATHER_API_KEY"]
+        except Exception:
+            pass
+        
+        # 2. 환경변수 시도
+        if not self.api_key:
             self.api_key = os.getenv('OPENWEATHER_API_KEY')
+        
+        # 3. 기본 API 키 (임시)
+        if not self.api_key:
+            self.api_key = 'f36170a91601f2703f8aa9a36d27b343'
         
         self.base_url = "http://api.openweathermap.org/data/2.5/weather"
         self.test_mode = test_mode
+        
+        # API 키 유효성 검사
+        if not self.test_mode and not self._validate_api_key():
+            print(f"API 키 검증 실패, 테스트 모드로 전환합니다. 키: {self.api_key[:10]}...")
+            self.test_mode = True
+    
+    def _validate_api_key(self):
+        """API 키가 유효한지 확인하는 함수"""
+        try:
+            test_url = f"{self.base_url}?q=Seoul&appid={self.api_key}"
+            response = requests.get(test_url, timeout=5)
+            return response.status_code == 200
+        except Exception:
+            return False
     
     def get_weather_data(self, city_name):
         """
