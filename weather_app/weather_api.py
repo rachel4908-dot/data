@@ -27,6 +27,7 @@ class WeatherAPI:
             self.api_key = 'f36170a91601f2703f8aa9a36d27b343'
         
         self.base_url = "http://api.openweathermap.org/data/2.5/weather"
+        self.forecast_url = "http://api.openweathermap.org/data/2.5/forecast"
         self.test_mode = test_mode
         
         # API 키 유효성 검사
@@ -155,6 +156,131 @@ class WeatherAPI:
         }
         
         return {'success': True, 'data': weather_data}
+    
+    def get_weekly_forecast(self, city_name):
+        """
+        도시 이름으로 5일 날씨 예보를 가져오는 함수
+        
+        Args:
+            city_name (str): 도시 이름
+            
+        Returns:
+            dict: 5일 예보 데이터 또는 에러 메시지
+        """
+        
+        # 테스트 모드일 경우 더미 데이터 반환
+        if self.test_mode:
+            return self._get_test_forecast_data(city_name)
+        
+        try:
+            # API 요청 URL 구성
+            params = {
+                'q': city_name,
+                'appid': self.api_key,
+                'units': 'metric',  # 섭씨 온도
+                'lang': 'kr'        # 한국어
+            }
+            
+            # API 요청
+            response = requests.get(self.forecast_url, params=params)
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # 5일 예보 데이터 처리 (3시간 간격 데이터를 일별로 그룹화)
+                forecast_data = []
+                current_date = None
+                daily_temps = []
+                daily_data = {}
+                
+                for item in data['list']:
+                    date_str = item['dt_txt'].split(' ')[0]  # YYYY-MM-DD 형식
+                    
+                    if current_date != date_str:
+                        # 새로운 날짜인 경우, 이전 날짜 데이터 저장
+                        if current_date and daily_temps:
+                            daily_data['min_temp'] = round(min(daily_temps), 1)
+                            daily_data['max_temp'] = round(max(daily_temps), 1)
+                            forecast_data.append(daily_data)
+                        
+                        # 새로운 날짜 데이터 초기화
+                        current_date = date_str
+                        daily_temps = []
+                        daily_data = {
+                            'date': date_str,
+                            'temperature': round(item['main']['temp'], 1),
+                            'description': item['weather'][0]['description'],
+                            'main_weather': item['weather'][0]['main'],
+                            'icon': item['weather'][0]['icon'],
+                            'humidity': item['main']['humidity'],
+                            'wind_speed': item['wind']['speed']
+                        }
+                    
+                    daily_temps.append(item['main']['temp'])
+                
+                # 마지막 날짜 데이터 저장
+                if daily_temps:
+                    daily_data['min_temp'] = round(min(daily_temps), 1)
+                    daily_data['max_temp'] = round(max(daily_temps), 1)
+                    forecast_data.append(daily_data)
+                
+                # 최대 5일만 반환
+                forecast_data = forecast_data[:5]
+                
+                return {'success': True, 'data': forecast_data}
+            
+            elif response.status_code == 404:
+                return {'success': False, 'error': '도시를 찾을 수 없습니다.'}
+            elif response.status_code == 401:
+                return {'success': False, 'error': 'API 키가 유효하지 않습니다. 테스트 모드로 전환하세요.'}
+            else:
+                return {'success': False, 'error': f'API 요청 실패: {response.status_code}'}
+                
+        except requests.exceptions.RequestException as e:
+            return {'success': False, 'error': f'네트워크 오류: {str(e)}'}
+        except Exception as e:
+            return {'success': False, 'error': f'알 수 없는 오류: {str(e)}'}
+    
+    def _get_test_forecast_data(self, city_name):
+        """테스트용 5일 예보 더미 데이터를 생성하는 함수"""
+        import random
+        from datetime import datetime, timedelta
+        
+        # 도시별 기본 온도 설정
+        city_temps = {
+            'Seoul': 15, 'Tokyo': 18, 'New York': 12, 
+            'London': 8, 'Paris': 10, 'Sydney': 22
+        }
+        base_temp = city_temps.get(city_name, 20)
+        
+        forecast_data = []
+        weather_conditions = [
+            {'main': 'Clear', 'description': '맑음', 'icon': '01d'},
+            {'main': 'Clouds', 'description': '구름 많음', 'icon': '03d'},
+            {'main': 'Rain', 'description': '비', 'icon': '10d'},
+            {'main': 'Snow', 'description': '눈', 'icon': '13d'},
+        ]
+        
+        for i in range(5):
+            date = datetime.now() + timedelta(days=i)
+            weather = random.choice(weather_conditions)
+            temp_variation = random.uniform(-5, 5)
+            base_daily_temp = base_temp + temp_variation
+            
+            daily_data = {
+                'date': date.strftime('%Y-%m-%d'),
+                'temperature': round(base_daily_temp, 1),
+                'min_temp': round(base_daily_temp - random.uniform(2, 5), 1),
+                'max_temp': round(base_daily_temp + random.uniform(2, 5), 1),
+                'description': weather['description'],
+                'main_weather': weather['main'],
+                'icon': weather['icon'],
+                'humidity': random.randint(40, 90),
+                'wind_speed': round(random.uniform(0, 10), 1)
+            }
+            forecast_data.append(daily_data)
+        
+        return {'success': True, 'data': forecast_data}
     
     def get_weather_icon_url(self, icon_code):
         """

@@ -102,7 +102,22 @@ def main():
     # 메인 컨텐츠
     if search_button and city_name:
         with st.spinner('날씨 정보를 가져오는 중...'):
-            result = weather_api.get_weather_data(city_name)
+            try:
+                result = weather_api.get_weather_data(city_name)
+                
+                # 디버깅 정보 (개발 시에만 표시)
+                debug_mode = st.checkbox("🔧 디버깅 정보 표시", value=False, key="debug_checkbox")
+                if debug_mode:
+                    st.session_state['show_debug'] = True
+                    st.write("**API 응답:**", result)
+                    st.write("**테스트 모드:**", weather_api.test_mode)
+                    st.write("**API 키 상태:**", "설정됨" if weather_api.api_key else "설정되지 않음")
+                else:
+                    st.session_state['show_debug'] = False
+                
+            except Exception as e:
+                st.error(f"❌ 오류가 발생했습니다: {str(e)}")
+                result = {'success': False, 'error': f'시스템 오류: {str(e)}'}
         
         if result['success']:
             data = result['data']
@@ -162,7 +177,9 @@ def main():
             # 온도 게이지 차트
             st.subheader("🌡️ 온도 게이지")
             
-            fig = go.Figure(go.Indicator(
+            import plotly.graph_objects as plotly_go
+            
+            fig = plotly_go.Figure(plotly_go.Indicator(
                 mode = "gauge+number+delta",
                 value = data['temperature'],
                 domain = {'x': [0, 1], 'y': [0, 1]},
@@ -213,6 +230,107 @@ def main():
                     advice = "🔥 매우 더워요! 시원한 곳에 있으세요."
                 
                 st.success(advice)
+            
+            # 주간 날씨 예보 섹션
+            st.subheader("📅 5일 날씨 예보")
+            
+            with st.spinner('주간 예보를 가져오는 중...'):
+                try:
+                    forecast_result = weather_api.get_weekly_forecast(city_name)
+                    
+                    # 디버깅 정보
+                    if st.session_state.get('show_debug', False):
+                        st.write("**예보 API 응답:**", forecast_result)
+                        
+                except Exception as e:
+                    st.error(f"❌ 주간 예보 오류: {str(e)}")
+                    forecast_result = {'success': False, 'error': f'예보 시스템 오류: {str(e)}'}
+            
+            if forecast_result['success']:
+                forecast_data = forecast_result['data']
+                
+                # 5개 컬럼으로 나누어 각 날짜별 예보 표시
+                cols = st.columns(5)
+                
+                for i, day_data in enumerate(forecast_data):
+                    with cols[i]:
+                        # 날짜 포맷팅
+                        date_obj = datetime.datetime.strptime(day_data['date'], '%Y-%m-%d')
+                        day_name = ['월', '화', '수', '목', '금', '토', '일'][date_obj.weekday()]
+                        date_str = f"{date_obj.month}/{date_obj.day}"
+                        
+                        # 날씨 아이콘
+                        icon_url = weather_api.get_weather_icon_url(day_data['icon'])
+                        
+                        # 카드 스타일로 표시
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                            padding: 1rem;
+                            border-radius: 10px;
+                            text-align: center;
+                            color: white;
+                            margin-bottom: 1rem;
+                        ">
+                            <div style="font-weight: bold; font-size: 0.9rem;">{day_name}</div>
+                            <div style="font-size: 0.8rem; opacity: 0.8;">{date_str}</div>
+                            <img src="{icon_url}" width="50" style="margin: 0.5rem 0;">
+                            <div style="font-size: 1.2rem; font-weight: bold;">{day_data['max_temp']}°</div>
+                            <div style="font-size: 0.9rem; opacity: 0.8;">{day_data['min_temp']}°</div>
+                            <div style="font-size: 0.8rem; margin-top: 0.5rem;">{day_data['description']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # 온도 변화 차트
+                st.subheader("📈 주간 온도 변화")
+                
+                dates = []
+                max_temps = []
+                min_temps = []
+                
+                for day_data in forecast_data:
+                    date_obj = datetime.datetime.strptime(day_data['date'], '%Y-%m-%d')
+                    day_name = ['월', '화', '수', '목', '금', '토', '일'][date_obj.weekday()]
+                    dates.append(f"{date_obj.month}/{date_obj.day} ({day_name})")
+                    max_temps.append(day_data['max_temp'])
+                    min_temps.append(day_data['min_temp'])
+                
+                import plotly.graph_objects as plotly_go
+                fig = plotly_go.Figure()
+                
+                # 최고 온도 라인
+                fig.add_trace(plotly_go.Scatter(
+                    x=dates,
+                    y=max_temps,
+                    mode='lines+markers',
+                    name='최고 온도',
+                    line=dict(color='#FF6B6B', width=3),
+                    marker=dict(size=8)
+                ))
+                
+                # 최저 온도 라인
+                fig.add_trace(plotly_go.Scatter(
+                    x=dates,
+                    y=min_temps,
+                    mode='lines+markers',
+                    name='최저 온도',
+                    line=dict(color='#4ECDC4', width=3),
+                    marker=dict(size=8)
+                ))
+                
+                fig.update_layout(
+                    title="5일간 온도 변화",
+                    xaxis_title="날짜",
+                    yaxis_title="온도 (°C)",
+                    hovermode='x unified',
+                    height=400,
+                    showlegend=True
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            else:
+                st.error(f"❌ 주간 예보를 가져올 수 없습니다: {forecast_result['error']}")
         
         else:
             st.error(f"❌ {result['error']}")
